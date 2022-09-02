@@ -20,10 +20,11 @@ from alphapose.utils.config import update_config
 from alphapose.utils.detector import DetectionLoader
 from alphapose.utils.file_detector import FileDetectionLoader
 from alphapose.utils.webcam_detector import WebCamDetectionLoader
-from alphapose.utils.waymo_detector import WaymoDetectionLoader
 from alphapose.utils.transforms import flip, flip_heatmap
 from alphapose.utils.vis import getTime
 from alphapose.utils.writer import DataWriter
+
+from waymo_detector import WaymoDetectionLoader
 
 """----------------------------- Demo options -----------------------------"""
 parser = argparse.ArgumentParser(description='AlphaPose Demo')
