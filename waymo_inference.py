@@ -8,10 +8,8 @@ import time
 import numpy as np
 import torch
 from tqdm import tqdm
-import natsort
-from alphapose.utils import waymo_detector
 
-from detector.apis import get_detector
+
 from trackers.tracker_api import Tracker
 from trackers.tracker_cfg import cfg as tcfg
 from trackers import track
