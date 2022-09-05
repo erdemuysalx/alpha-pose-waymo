@@ -1,3 +1,5 @@
+from builtins import exit
+from email.mime import image
 from itertools import count
 from threading import Thread
 from queue import Queue
@@ -78,7 +80,7 @@ class WaymoDetectionLoader():
         # self.all_scores = {}
         # self.all_ids = {}
         # Loop through TFRecord fukes
-        for frame_path in tqdm(file_paths[:5]):
+        for frame_path in tqdm(file_paths):
             # Unpack dataset frin TFRecord file
             dataset = tf.data.TFRecordDataset(frame_path, compression_type='')
             for data in tqdm(dataset):
@@ -98,28 +100,17 @@ class WaymoDetectionLoader():
                                 y = labels[label].camera[cam].box.center_y
                                 w = labels[label].camera[cam].box.width
                                 h = labels[label].camera[cam].box.length
-                                image_id = str(int(x)) + str(int(y)) + '+' + str(cam) + '_' + label
+                                # image_id = str(int(x)) + str(int(y)) + '+' + str(cam) + '_' + label
+                                image_id = str(cam) + '_' + label + '.png'
 
-                                bbox = [x, y, w, h]
+                                #bbox = [x, y, w, h]
+                                bbox = [x, y, x+w, y+h]
                                 score = 1
-                                idx = 0
 
                                 self.all_boxes[image_id].append(bbox)
                                 self.all_scores[image_id].append(score)
-                                self.all_ids[image_id].append(idx)
+                                self.all_ids[image_id].append(0)
                                 self.all_imgs_frame_paths[image_id].add(frame_path)
-
-                                # if image_id not in self.all_imgs:
-                                #     self.all_imgs.append(image_id)
-                                #     self.all_boxes[image_id] = []
-                                #     self.all_scores[image_id] = []
-                                #     self.all_ids[image_id] = []
-                                #     self.all_imgs_frame_paths[image_id] = []
-
-                                # self.all_boxes[image_id].append(bbox)
-                                # self.all_scores[image_id].append(score)
-                                # self.all_ids[image_id].append(0)
-                                # self.all_imgs_frame_paths[image_id].append(frame_path)
 
                                 # initialize the queue used to store data
                                 """
@@ -180,8 +171,9 @@ class WaymoDetectionLoader():
             ids = torch.from_numpy(np.array(self.all_ids[im_name_k]))
 
             frame_path = self.all_imgs_frame_paths[im_name_k]
-            cam, label = im_name_k.split('+')[1][:1], im_name_k.split('+')[1][2:]  # im_name_k.split('_')
-            #print("NAME", im_name_k, cam, label)
+            # cam, label = im_name_k.split('+')[1][:1], im_name_k.split('+')[1][2:]  # im_name_k.split('_')
+            cam, label = im_name_k[:1], im_name_k[2:]
+
 
             dataset = tf.data.TFRecordDataset(list(frame_path), compression_type='')
             for data in dataset:
@@ -195,21 +187,31 @@ class WaymoDetectionLoader():
             orig_img_k = self.get_image_arr(frame, int(cam))
             #cv2.imwrite("/lhome/rauysal/AlphaPose/results/img/" + im_name_k + '.png', orig_img_k)
 
+
+            # !!! self._input_size yerine 1000x1000 kullaniyorum
             inps = torch.zeros(boxes.size(0), 3, *self._input_size)
             cropped_boxes = torch.zeros(boxes.size(0), 4)
             for i, box in enumerate(boxes):
                 inps[i], cropped_box = self.transformation.test_transform(orig_img_k, box)
                 cropped_boxes[i] = torch.FloatTensor(cropped_box)
+ 
+                #cropped_img_k = self.get_cropped_image(orig_img_k, box).transpose(2, 0, 1)
+                #zeros = np.zeros((3, 1000, 1000))
+                #r, c = 0, 0
+                #zeros[:, r:r+cropped_img_k.shape[1], c:c+cropped_img_k.shape[2]] += cropped_img_k
+                #cropped_img_k = zeros
 
-                #cropped_img_k = self.get_cropped_image(orig_img_k, box, margin=0.5)
-                #cv2.imwrite("/lhome/rauysal/AlphaPose/results/vis/" + im_name_k + '.png', cropped_img_k)
-                # cropped_boxes[i] = torch.from_numpy(np.array(cropped_image))
+                #image_tensor = self.image_to_tensor(cropped_img_k)
+                #print(image_tensor.shape)
+                #inps[i] = image_tensor #torch.reshape(image_tensor, self._input_size)
+                #cropped_boxes[i] = torch.FloatTensor(box.float())
+                #cv2.imwrite("/lhome/rauysal/AlphaPose/results/vis/custom_crop" + im_name_k + '.png', cropped_img_k)
 
-                # from torchvision.utils import save_image
-                # save_image(inps[i], "/lhome/rauysal/AlphaPose/results/img/" + im_name_k + '.png')
+                #from torchvision.utils import save_image
+                #save_image(inps[i], "/lhome/rauysal/AlphaPose/results/vis/custom_crop/test_transform" + im_name_k + '.png')
 
-                # img = tensor_to_image(inps[i])
-                # img.save("/lhome/rauysal/AlphaPose/results/img/" + im_name_k + '.png')
+                #img = tensor_to_image(inps[i])
+                #img.save("/lhome/rauysal/AlphaPose/results/vis/custom_crop/test_transform" + im_name_k + '.png')
             self.wait_and_put(self.pose_queue, (inps, orig_img_k, im_name_k, boxes, scores, ids, cropped_boxes))
 
         self.wait_and_put(self.pose_queue, (None, None, None, None, None, None, None))
@@ -267,23 +269,6 @@ class WaymoDetectionLoader():
         print(f"There are {len(file_paths)} TFRecord file in total")
         return file_paths
 
-    def get_image_arr(self, frame, cam):
-        """_summary_
-
-        Args:
-            frame (open dataset frame) Frame of the tfrecord file.
-            labels (waymo object labels): Labels of the pedestrain.
-            cam (int): Camera in which the data can be found.
-
-        Returns:
-            tuple: Croped image and new keypoint coordinates.
-        """
-
-        # Get camera images by name
-        camera_image_by_name = {i.name: i.image for i in frame.images}
-        image_arr = self._imdecode(camera_image_by_name[cam])
-        return image_arr
-
     def _imdecode(self, buf: bytes) -> np.ndarray:
         """
         Function from waymo open dataset examples
@@ -300,6 +285,23 @@ class WaymoDetectionLoader():
         with io.BytesIO(buf) as fd:
             pil = PIL.Image.open(fd)
             return np.array(pil)
+
+    def get_image_arr(self, frame, cam):
+        """_summary_
+
+        Args:
+            frame (open dataset frame) Frame of the tfrecord file.
+            labels (waymo object labels): Labels of the pedestrain.
+            cam (int): Camera in which the data can be found.
+
+        Returns:
+            tuple: Croped image and new keypoint coordinates.
+        """
+
+        # Get camera images by name
+        camera_image_by_name = {i.name: i.image for i in frame.images}
+        image_arr = self._imdecode(camera_image_by_name[cam])
+        return image_arr
 
     def get_cropped_image(self, image, bbox, margin=0):
         """_summary_
@@ -323,3 +325,43 @@ class WaymoDetectionLoader():
         cropped_image = image[min_y:max_y, min_x:max_x, :]
 
         return cropped_image
+
+
+    def image_to_tensor(self, image):
+        """Transform ndarray image to torch tensor.
+        Parameters
+        ----------
+        img: numpy.ndarray
+            An ndarray with shape: `(H, W, 3)`.
+        Returns
+        -------
+        torch.Tensor
+            A tensor with shape: `(3, H, W)`.
+        """
+        #image = np.transpose(image, (2, 0, 1))  # C*H*W
+        image = self.to_torch(image).float()
+        if image.max() > 1:
+            image /= 255
+        return image
+
+    def tensor_to_image(self, tensor):
+        tensor = tensor*255
+        tensor = np.array(tensor, dtype=np.uint8)
+        if np.ndim(tensor) > 3:
+            assert tensor.shape[0] == 1
+            tensor = tensor[0]
+        return PIL.Image.fromarray(tensor)
+
+    def to_torch(self, ndarray):
+        # numpy.ndarray => torch.Tensor
+        if type(ndarray).__module__ == 'numpy':
+            return torch.from_numpy(ndarray)
+        elif not torch.is_tensor(ndarray):
+            raise ValueError("Cannot convert {} to torch tensor"
+                            .format(type(ndarray)))
+        return ndarray
+
+    def pad_with(self, vector, pad_width, iaxis, kwargs):
+        pad_value = kwargs.get('padder', 0)
+        vector[:pad_width[0]] = pad_value
+        vector[-pad_width[1]:] = pad_value
